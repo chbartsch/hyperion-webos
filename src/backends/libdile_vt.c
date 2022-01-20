@@ -245,6 +245,8 @@ void capture_frame() {
     static uint8_t* vplane = NULL;
     static uint8_t* argbvideo = NULL;
     static uint8_t* outbuf = NULL;
+    static uint8_t* yplane = NULL;
+    static uint8_t* uvplane = NULL;
 
     if (use_vsync_thread) {
         pthread_mutex_lock(&vsync_lock);
@@ -277,7 +279,19 @@ void capture_frame() {
             // Temporary conversion buffer
             outbuf = malloc (width * height * 3);
 
-        NV21ToRGB24(vfbs[idx][0], vfbprop.stride, vfbs[idx][1], vfbprop.stride, outbuf, width * 3, width, height);
+        if (0)
+            NV21ToRGB24(vfbs[idx][0], vfbprop.stride, vfbs[idx][1], vfbprop.stride, outbuf, width * 3, width, height);
+        else {
+            if (yplane == NULL)
+                yplane = malloc(vfbprop.stride * height);
+            if (uvplane == NULL)
+                uvplane = malloc(vfbprop.stride * height);
+
+            memcpy(yplane, vfbs[idx][0], vfbprop.stride * height);
+            memcpy(uvplane, vfbs[idx][1], vfbprop.stride * height);
+
+            NV21ToRGB24(yplane, vfbprop.stride, uvplane, vfbprop.stride, outbuf, width * 3, width, height);
+        }
     } else if (vfbprop.pixelFormat == DILE_VT_VIDEO_FRAME_BUFFER_PIXEL_FORMAT_YUV422_SEMI_PLANAR) {
         if (outbuf == NULL)
             outbuf = malloc (3 * width * height);
