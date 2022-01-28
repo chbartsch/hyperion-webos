@@ -21,20 +21,19 @@
 
 pthread_t capture_thread = 0;
 
-//Halgal
+// Halgal
 HAL_GAL_SURFACE surfaceInfo;
 size_t nBytesGUI;
 char *addrGUI;
 int fdGUI;
 
-//Other
+// Video
 const char *caller = "hyperion-webos_service";
 VT_DRIVER *driver = NULL;
 char client[128] = "00";
-bool capture_run = false;
-
 _LibVtCaptureProperties props;
 
+// Buffer
 char *videoY = NULL;
 char *videoUV = NULL;
 char *videoARGB = NULL;
@@ -43,16 +42,17 @@ char *guiARGB = NULL;
 char *outARGB = NULL;
 char *outRGB = NULL;
 
-//All
+// All
+bool capture_run = false;
 int strideGUI;
 int strideVideo;
 int width = 0;
 int height = 0;
-
 cap_backend_config_t config = {0, 0, 0, 0};
 cap_imagedata_callback_t imagedata_cb = NULL;
 
 // Prototypes
+int halgal_initialize();
 int vtcapture_initialize();
 void *capture_thread_target(void *data);
 
@@ -69,6 +69,13 @@ int capture_preinit(cap_backend_config_t *backend_config, cap_imagedata_callback
     INFO("Preinit called. Copying config..");
     memcpy(&config, backend_config, sizeof(cap_backend_config_t));
 
+    // Important check
+    if (config.no_gui == 1 && config.no_video == 1) {
+
+        ERR("Neither UI nor video capture is enabled. Enable at least one of them.");
+        return -1;
+    }
+
     INFO("Copying config done. Initialize vars..");
 
     imagedata_cb = callback;
@@ -79,9 +86,8 @@ int capture_preinit(cap_backend_config_t *backend_config, cap_imagedata_callback
     VT_BUF_T buf_cnt = 3;
 
     // Sorry, no unlimited fps for you.
-    if (config.fps == 0){
+    if (config.fps == 0)
         config.fps = 60;
-    }
 
     props.dump = dump;
     props.loc = loc;
@@ -95,271 +101,218 @@ int capture_preinit(cap_backend_config_t *backend_config, cap_imagedata_callback
 
 int capture_init()
 {
-    int done;
+    int rval;
     _LibVtCaptureBufferInfo buff;
 
     INFO("Initialization of capture devices..");
 
+    // GUI
     if (config.no_gui != 1) {
 
-        INFO("Graphical capture enabled. Begin init..");
-        if ((done = HAL_GAL_Init()) != 0) {
-            ERR("HAL_GAL_Init failed: %x", done);
-            return -1;
-        }
-        INFO("HAL_GAL_Init done! Exit: %d", done);   
-
-        if ((done = HAL_GAL_CreateSurface(config.resolution_width, config.resolution_height, 0, &surfaceInfo)) != 0) {
-            ERR("HAL_GAL_CreateSurface failed: %x", done);
-            return -1;
-        }
-        INFO("HAL_GAL_CreateSurface done! SurfaceID: %d", surfaceInfo.vendorData);
-
-        if ((done = HAL_GAL_CaptureFrameBuffer(&surfaceInfo)) != 0) {
-            ERR("HAL_GAL_CaptureFrameBuffer failed: %x", done);
-            return -1;
-        }
-        INFO("HAL_GAL_CaptureFrameBuffer done! %x", done);
-
-        fdGUI = open("/dev/gfx",2);
-        if (fdGUI < 0){
-            ERR("HAL_GAL: gfx open fail result: %d", fdGUI);
-            return -1;
-
-        }else{
-            INFO("HAL_GAL: gfx open ok result: %d", fdGUI);
+        if ((rval = halgal_initialize()) != 0) {
+            
+            ERR("halgal_initialize() failed: %x", rval);
+            return rval;
         }
 
-        if (width != 0 && width != surfaceInfo.width) {
+        guiABGR = (char *) malloc(nBytesGUI);
+        guiARGB = (char *) malloc(nBytesGUI);
+        outARGB = (char *) malloc(nBytesGUI);
 
-            ERR("vtcapture and halgal width doesn't match");
-            return -1;
-        }
-        if (height != 0 && height != surfaceInfo.height) {
-
-            ERR("vtcapture and halgal height doesn't match");
-            return -1;
-        }
-        width = surfaceInfo.width;
-        height = surfaceInfo.height;
-        strideGUI = surfaceInfo.pitch;
-
-        nBytesGUI = surfaceInfo.property;
-        if (nBytesGUI == 0){
-            nBytesGUI = strideGUI * height;
-        }
-
-        if (config.no_gui != 1 && config.no_video == 1) //GUI only
-        {
-            DBG("Malloc halgal vars...");
-
-            // stride = surfaceInfo.pitch/4;
-            // rgbsize = sizeof(char) * surfaceInfo.width * surfaceInfo.height * 3;
-
-            guiABGR = (char *) malloc(nBytesGUI);
-            guiARGB = (char *) malloc(nBytesGUI);
-            outARGB = (char *) malloc(nBytesGUI);
-            outRGB = (char *) malloc(width * height * 3 * sizeof(char));
-
-            addrGUI = (char *) mmap(0, nBytesGUI, 3, 1, fdGUI, surfaceInfo.offset);
-
-            DBG("Malloc halgal vars finished.");
-        }
-
-        INFO("Halgal done!");
+        addrGUI = (char *) mmap(0, nBytesGUI, 3, 1, fdGUI, surfaceInfo.offset);
     }
 
+    // Video
     if (config.no_video != 1) {
 
-        INFO("Init video capture..");
-        driver = vtCapture_create();
-        INFO("Driver created!");
-
-        done = vtcapture_initialize();
-        if (done == -1){
-            ERR("vtcapture_initialize failed!");
-            return -1;
-        }else if (done == 11){
-            ERR("vtcapture_initialize failed! No capture permissions!");
-            return 11;
-        }else if (done == 17 || done == 1){
-            // vtcapture_initialized = false;
-            INFO("vtcapture not ready yet!");
-            return done;
-        }else if (done == 0){
-            // vtcapture_initialized = true;
-            INFO("vtcapture initialized!");
-        } else{
-            ERR("vtcapture_initialize failed! Something not covered happend! Returncode: %d", done);
-            return -2;
+        if ((rval = vtcapture_initialize()) != 0) {
+            
+            ERR("vtcapture_initialize() failed: %x", rval);
+            return rval;
         }
-
-        if (config.no_video != 1 && config.no_gui == 1) //Video only
-        {
-            DBG("Malloc vt vars...");
-            
-            vtCapture_currentCaptureBuffInfo(driver, &buff);
-            
-            videoY = (char *) malloc(buff.size0);
-            videoUV = (char *) malloc(buff.size1);
-
-            videoARGB = (char *) malloc(width * height * 4 * sizeof(char));
-            outRGB = (char *) malloc(width * height * 3 * sizeof(char));
-
-            DBG("Malloc vt vars finished.");
-        }
-    }
-
-    
-    if(config.no_video != 1 && config.no_gui != 1) //Both
-    {
-        INFO("Malloc hal+vt vars..");
-            
+        
         vtCapture_currentCaptureBuffInfo(driver, &buff);
 
         videoY = (char *) malloc(buff.size0);
         videoUV = (char *) malloc(buff.size1);
+        videoARGB = (char *) malloc(width * height * 4 * sizeof(char));
+    }
+    
+    // Output
+    outRGB = (char *) malloc(width * height * 3 * sizeof(char));
+    
+    return 0;
+}
 
-        // rgbasize = sizeof(char) * stride * h * 4;
-        // rgbsize = sizeof(char) * stride * h * 3;
+int halgal_initialize()
+{
+    int rval;
 
-        videoARGB = (char *) malloc(width * height * 4 * sizeof(char)); 
-        guiABGR = (char *) malloc(nBytesGUI * sizeof(char));
-        guiARGB = (char *) malloc(nBytesGUI * sizeof(char));
-        outARGB = (char *) malloc(nBytesGUI * sizeof(char));
-        outRGB = (char *) malloc(width * height * 3 * sizeof(char));
+    INFO("Graphical capture enabled. Begin init..");
+    if ((rval = HAL_GAL_Init()) != 0) {
 
-        // stride = surfaceInfo.pitch/4;
+        ERR("HAL_GAL_Init failed: %x", rval);
+        return -1;
+    }
+    INFO("HAL_GAL_Init done! Exit: %d", rval);   
 
-        addrGUI = (char *) mmap(0, nBytesGUI, 3, 1, fdGUI, surfaceInfo.offset);
+    if ((rval = HAL_GAL_CreateSurface(config.resolution_width, config.resolution_height, 0, &surfaceInfo)) != 0) {
 
-        INFO("Malloc hal+vt vars finished.");
+        ERR("HAL_GAL_CreateSurface failed: %x", rval);
+        return -1;
+    }
+    INFO("HAL_GAL_CreateSurface done! SurfaceID: %d", surfaceInfo.vendorData);
+
+    if ((rval = HAL_GAL_CaptureFrameBuffer(&surfaceInfo)) != 0) {
+
+        ERR("HAL_GAL_CaptureFrameBuffer failed: %x", rval);
+        return -1;
+    }
+    INFO("HAL_GAL_CaptureFrameBuffer done! %x", rval);
+
+    if ((fdGUI = open("/dev/gfx", 2)) < 0) {
+
+        ERR("HAL_GAL: gfx open fail result: %d", fdGUI);
+        return -1;
+    }
+    INFO("HAL_GAL: gfx open ok result: %d", fdGUI);
+
+    // Just in case vtcapture was initialized first
+    if (width != 0 && width != surfaceInfo.width) {
+
+        ERR("vtcapture and halgal width doesn't match");
+        return -1;
+    }
+    if (height != 0 && height != surfaceInfo.height) {
+
+        ERR("vtcapture and halgal height doesn't match");
+        return -1;
     }
 
-    // capture_initialized = true;
+    width = surfaceInfo.width;
+    height = surfaceInfo.height;
+    strideGUI = surfaceInfo.pitch;
+    nBytesGUI = surfaceInfo.property;
+    if (nBytesGUI == 0)
+        nBytesGUI = strideGUI * height;
+
+    INFO("Halgal done!");
+
     return 0;
 }
 
 int vtcapture_initialize()
 {
+    int rval = 0;
+
     _LibVtCapturePlaneInfo plane;
     _LibVtCaptureBufferInfo buff;
 
     INFO("Starting vtcapture initialization.");
-    int innerdone = 0;
-    innerdone = vtCapture_init(driver, caller, client);
-    if (innerdone == 17) {
-        ERR("vtCapture_init not ready yet return: %d", innerdone);
+
+    if (!(driver = vtCapture_create())) {
+        
+        ERR("Could not create vtcapture driver.");
+        return -1;
+    }
+    INFO("Driver created!");
+
+    if ((rval = vtCapture_init(driver, caller, client)) == 17) {
+
+        ERR("vtCapture_init not ready yet return: %d", rval);
         return 17;
-    }else if (innerdone == 11){
-        ERR("vtCapture_init failed: %d Permission denied! Quitting...", innerdone);
+    }
+    else if (rval == 11) {
+
+        ERR("vtCapture_init failed: %d Permission denied! Quitting...", rval);
         return 11;
-    }else if (innerdone != 0){
-        ERR("vtCapture_init failed: %d Quitting...", innerdone);
+    }
+    else if (rval != 0) {
+
+        ERR("vtCapture_init failed: %d Quitting...", rval);
         return -1;
     }
     INFO("vtCapture_init done! Caller_ID: %s Client ID: %s", caller, client);
 
-    
-    // //Donno why, but we have to skip first try after autostart. Otherwise only first frame is captured
-    // if (startuptries < 1){
-    //     INFO("Skipping successfull vtCapture_init to prevent start after first try.");
-    //     startuptries++;
+    if ((vtCapture_preprocess(driver, client, &props)) == 1) {
 
-    //     done = vtCapture_postprocess(driver, client);
-    //     if (done == 0){
-    //         INFO("vtCapture_postprocess done!");
-    //         done = vtCapture_finalize(driver, client);
-    //         if (done == 0) {
-    //             INFO("vtCapture_finalize done!");
-    //         } else{
-    //             ERR("vtCapture_finalize failed: %x", done);
-    //         }
-    //     } else{
-    //         done = vtCapture_finalize(driver, client);
-    //         if (done == 0) {
-    //             INFO("vtCapture_finalize done!");
-    //         } else{
-    //             ERR("vtCapture_finalize failed: %x", done);
-    //         }
-    //     }
-
-    //     return 17; //Just simulate init failed
-    // }
-
-    innerdone = vtCapture_preprocess(driver, client, &props);
-    if (innerdone == 1){
-        ERR("vtCapture_preprocess not ready yet return: %d", innerdone);
+        ERR("vtCapture_preprocess not ready yet return: %d", rval);
         return 1;
-    }else if (innerdone != 0) {
-        ERR("vtCapture_preprocess failed: %x Quitting...", innerdone);
+    }
+    else if (rval != 0) {
+        
+        ERR("vtCapture_preprocess failed: %x Quitting...", rval);
         return -1;
     }
     INFO("vtCapture_preprocess done!");
 
-    innerdone = vtCapture_planeInfo(driver, client, &plane);
-    if (innerdone == 0 ) {
+    if ((vtCapture_planeInfo(driver, client, &plane)) != 0 ) {
 
-        if (width != 0 && width != plane.planeregion.c) {
-
-            ERR("vtcapture and halgal width doesn't match");
-            return -1;
-        }
-        if (height != 0 && height != plane.planeregion.d) {
-
-            ERR("vtcapture and halgal height doesn't match");
-            return -1;
-        }
-        
-        width = plane.planeregion.c;
-        height = plane.planeregion.d;
-        strideVideo = plane.stride;
-    }
-    else {
-
-        ERR("vtCapture_planeInfo failed: %xQuitting...", innerdone);
+        ERR("vtCapture_planeInfo failed: %xQuitting...", rval);
         return -1;
     }
+
+    // Just in case halgal was initialized first
+    if (width != 0 && width != plane.planeregion.c) {
+
+        ERR("vtcapture and halgal width doesn't match");
+        return -1;
+    }
+    if (height != 0 && height != plane.planeregion.d) {
+
+        ERR("vtcapture and halgal height doesn't match");
+        return -1;
+    }
+    
+    width = plane.planeregion.c;
+    height = plane.planeregion.d;
+    strideVideo = plane.stride;
+
     INFO("vtCapture_planeInfo done! stride: %d Region: x: %d, y: %d, w: %d, h: %d Active Region: x: %d, y: %d w: %d h: %d", 
             plane.stride, plane.planeregion.a, plane.planeregion.b, plane.planeregion.c, plane.planeregion.d, 
             plane.activeregion.a, plane.activeregion.b, plane.activeregion.c, plane.activeregion.d);
 
-    innerdone = vtCapture_process(driver, client);
-    if (innerdone != 0) {
+    if ((vtCapture_process(driver, client)) != 0) {
 
-        ERR("vtCapture_process failed: %xQuitting...", innerdone);
+        ERR("vtCapture_process failed: %xQuitting...", rval);
         return -1;
     }
     INFO("vtCapture_process done!");
 
     int cnter = 0;
     do {
+
         usleep(100000);
-        innerdone = vtCapture_currentCaptureBuffInfo(driver, &buff);
-        if (innerdone == 0 ) {
+
+        if ((rval = vtCapture_currentCaptureBuffInfo(driver, &buff)) == 0 ) {
+
             break;
-        }else if (innerdone != 2){
-            ERR("vtCapture_currentCaptureBuffInfo failed: %x Quitting...", innerdone);
+        }
+        else if (rval != 2) {
+
+            ERR("vtCapture_currentCaptureBuffInfo failed: %x Quitting...", rval);
             capture_terminate();
             return -1;
         }
         cnter++;
-    } while(innerdone != 0);
+    } while(rval != 0);
 
     INFO("vtCapture_currentCaptureBuffInfo done after %d tries! addr0: %p addr1: %p size0: %d size1: %d", 
             cnter, buff.start_addr0, buff.start_addr1, buff.size0, buff.size1);
 
     INFO("vtcapture initialization finished.");
+
     return 0;
 }
 
 int capture_start()
 {
     INFO("Starting capture thread..");
+    
     capture_run = true;
-    if (pthread_create(&capture_thread, NULL, capture_thread_target, NULL) != 0) {
+    if (pthread_create(&capture_thread, NULL, capture_thread_target, NULL) != 0)
         return -1;
-    }
+
     return 0;
 }
 
@@ -452,7 +405,7 @@ void capture_frame()
             ERR("HAL_GAL_CaptureFrameBuffer failed: %x", indone);
             return;
         }
-        memcpy(guiABGR, addrGUI, surfaceInfo.property);
+        memcpy(guiABGR, addrGUI, nBytesGUI);
     }
 
     // Convert Video+GUI
@@ -489,7 +442,9 @@ void* capture_thread_target(void* data)
 {
     uint64_t frame_counter = 0;
     uint64_t frame_counter_start = getticks_us();
+
     while (capture_run) {
+
         uint64_t frame_start = getticks_us();
         capture_frame();
         int64_t wait_time = (1000000 / config.fps) - (getticks_us() - frame_start);
@@ -500,6 +455,7 @@ void* capture_thread_target(void* data)
         frame_counter += 1;
 
         if (frame_counter >= 60) {
+
             double fps = (frame_counter * 1000000.0) / (getticks_us() - frame_counter_start);
             DBG("framerate: %.6f FPS", fps);
             frame_counter = 0;
