@@ -74,12 +74,24 @@ typedef struct _unicapture_state {
     capture_backend_t* ui_capture;
     capture_backend_t* video_capture;
 
+    bool running;
+    pthread_t main_thread;
+
+    bool ui_capture_running;
+    bool video_capture_running;
+
     bool vsync_thread_running;
     pthread_t vsync_thread;
     pthread_mutex_t vsync_lock;
     pthread_cond_t vsync_cond;
 } unicapture_state_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 int unicapture_try_backends(cap_backend_config_t* config, capture_backend_t* backend, char** candidates);
 int unicapture_init_backend(cap_backend_config_t* config, capture_backend_t* backend, char* name);
-int unicapture_run(unicapture_state_t* this);
+int unicapture_run(unicapture_state_t* state);
+#ifdef __cplusplus
+}
+#endif

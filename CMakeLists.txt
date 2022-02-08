@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.6)
-project(hyperion-webos VERSION 1.0 LANGUAGES C)
+project(hyperion-webos VERSION 1.0 LANGUAGES C CXX)
 
 add_subdirectory(libyuv)
 add_subdirectory(tv-native-apis)
@@ -42,6 +42,7 @@ set_property(TARGET hyperion-webos PROPERTY ENABLE_EXPORTS 1)
 add_executable(unicapture-test
     src/unicapture-test.c
     src/unicapture.c
+    src/converter.c
     src/log.c
 )
 set_target_properties(unicapture-test PROPERTIES
@@ -53,58 +54,58 @@ target_link_libraries(unicapture-test pthread dl yuv ${PMLOG_LDFLAGS})
 set_property(TARGET unicapture-test PROPERTY ENABLE_EXPORTS 1)
 
 # "Unified" v2 Backends
-add_library(unigm_backend SHARED
-    src/backends/uni_libgm.c
+add_library(gm_backend SHARED
+    src/backends/libgm.c
 )
-target_include_directories(unigm_backend PRIVATE src src/backends)
-target_link_libraries(unigm_backend gm)
-
-add_library(unidile_vt_backend SHARED
-    src/backends/uni_libdile_vt.c
-)
-target_include_directories(unidile_vt_backend PRIVATE src src/backends)
-target_link_libraries(unidile_vt_backend dile_vt)
-
-# libdile_vt.so seems to be missing DT_NEEDED for libPmLogLib.so.3 - let's just
-# add it over to our library. For some reason adding PmLogLib loaded via
-# pkgconfig to target_link_libraries doesn't work...
-set_target_properties(unidile_vt_backend PROPERTIES LINK_FLAGS "-lPmLogLib")
-
-add_library(unihalgal_backend SHARED
-    src/backends/uni_libhalgal.c
-)
-target_include_directories(unihalgal_backend PRIVATE src src/backends)
-target_link_libraries(unihalgal_backend halgal)
-
-add_library(univtcapture_backend SHARED
-    src/backends/uni_libvtcapture.c
-)
-target_include_directories(univtcapture_backend PRIVATE src src/backends)
-target_link_libraries(univtcapture_backend vtcapture)
-
-# Legacy backends
-add_library(vt_backend SHARED
-    src/backends/libvt.c
-)
-target_compile_definitions(vt_backend PRIVATE CAPTURE_BACKEND)
-target_include_directories(vt_backend PRIVATE src src/backends)
-target_link_libraries(vt_backend vt ${GLESv2_LIBRARIES} ${EGL_LIBRARIES})
-
-add_library(vtcapture_backend SHARED
-    src/backends/libvtcapture.c
-)
-target_compile_definitions(vtcapture_backend PRIVATE CAPTURE_BACKEND)
-target_include_directories(vtcapture_backend PRIVATE src src/backends)
-target_link_libraries(vtcapture_backend vtcapture halgal yuv)
+target_include_directories(gm_backend PRIVATE src src/backends)
+target_link_libraries(gm_backend gm)
 
 add_library(dile_vt_backend SHARED
     src/backends/libdile_vt.c
 )
-target_compile_definitions(dile_vt_backend PRIVATE CAPTURE_BACKEND)
 target_include_directories(dile_vt_backend PRIVATE src src/backends)
-target_link_libraries(dile_vt_backend dile_vt yuv)
+target_link_libraries(dile_vt_backend dile_vt)
 
 # libdile_vt.so seems to be missing DT_NEEDED for libPmLogLib.so.3 - let's just
 # add it over to our library. For some reason adding PmLogLib loaded via
 # pkgconfig to target_link_libraries doesn't work...
 set_target_properties(dile_vt_backend PROPERTIES LINK_FLAGS "-lPmLogLib")
+
+add_library(halgal_backend SHARED
+    src/backends/libhalgal.c
+)
+target_include_directories(halgal_backend PRIVATE src src/backends)
+target_link_libraries(halgal_backend halgal)
+
+add_library(vtcapture_backend SHARED
+    src/backends/libvtcapture.cpp
+)
+target_include_directories(vtcapture_backend PRIVATE src src/backends)
+target_link_libraries(vtcapture_backend vtcapture)
+
+# Legacy backends
+add_library(vt_legacy_backend SHARED
+    src/backends/libvt_legacy.c
+)
+target_compile_definitions(vt_legacy_backend PRIVATE CAPTURE_BACKEND)
+target_include_directories(vt_legacy_backend PRIVATE src src/backends)
+target_link_libraries(vt_legacy_backend vt ${GLESv2_LIBRARIES} ${EGL_LIBRARIES})
+
+add_library(vtcapture_legacy_backend SHARED
+    src/backends/libvtcapture_legacy.c
+)
+target_compile_definitions(vtcapture_legacy_backend PRIVATE CAPTURE_BACKEND)
+target_include_directories(vtcapture_legacy_backend PRIVATE src src/backends)
+target_link_libraries(vtcapture_legacy_backend vtcapture halgal yuv)
+
+add_library(dile_vt_legacy_backend SHARED
+    src/backends/libdile_vt_legacy.c
+)
+target_compile_definitions(dile_vt_legacy_backend PRIVATE CAPTURE_BACKEND)
+target_include_directories(dile_vt_legacy_backend PRIVATE src src/backends)
+target_link_libraries(dile_vt_legacy_backend dile_vt yuv)
+
+# libdile_vt.so seems to be missing DT_NEEDED for libPmLogLib.so.3 - let's just
+# add it over to our library. For some reason adding PmLogLib loaded via
+# pkgconfig to target_link_libraries doesn't work...
+set_target_properties(dile_vt_legacy_backend PROPERTIES LINK_FLAGS "-lPmLogLib")
