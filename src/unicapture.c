@@ -82,10 +82,10 @@ void* unicapture_vsync_handler(void* data)
     INFO("vsync thread starting...");
 
     while (this->vsync_thread_running) {
-        if (this->video_capture_running && this->video_capture->wait) {
+        if (this->vsync && this->video_capture_running && this->video_capture->wait) {
             this->video_capture->wait(this->video_capture->state);
         } else {
-            usleep(1000000 / 30);
+            usleep(1000000 / (this->fps == 0 ? 30 : this->fps));
         }
         pthread_mutex_lock(&this->vsync_lock);
         pthread_cond_signal(&this->vsync_cond);
@@ -274,6 +274,7 @@ int unicapture_run(unicapture_state_t* this)
 
             if (framecounter % 60 == 0) {
                 double fps = (60 * 1000000.0) / (getticks_us() - framecounter_start);
+                this->metrics.framerate = fps;
                 INFO("Framerate: %.6f FPS; timings - wait: %lldus, acquire: %lldus, convert: %lldus, process; %lldus, send: %lldus, release: %lldus",
                     fps, frame_wait - frame_start, frame_acquired - frame_wait, frame_converted - frame_acquired, frame_processed - frame_converted, frame_sent - frame_processed, frame_released - frame_sent);
 
@@ -325,6 +326,7 @@ int unicapture_run(unicapture_state_t* this)
 void unicapture_init(unicapture_state_t* this)
 {
     memset(this, 0, sizeof(unicapture_state_t));
+    this->vsync = true;
 }
 
 int unicapture_start(unicapture_state_t* this)

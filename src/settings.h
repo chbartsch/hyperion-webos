@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <pbnjson.h>
 
+#define SETTINGS_PERSISTENCE_PATH "/media/developer/apps/usr/palm/services/org.webosbrew.piccap.service/config.json"
+
 // Settings stored in config.json file
 
 typedef struct _settings_t {
@@ -16,9 +18,11 @@ typedef struct _settings_t {
     int fps;
     int width;
     int height;
+    bool vsync;
 
     bool no_video;
     bool no_gui;
+
     bool autostart;
 } settings_t;
 

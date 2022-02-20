@@ -26,7 +26,9 @@ static struct option long_options[] = {
     { "no-video", no_argument, 0, 'V' },
     { "no-gui", no_argument, 0, 'G' },
     { "no-service", no_argument, 0, 'S' },
+    { "no-vsync", no_argument, 0, 'n' },
     { "backend", required_argument, 0, 'b' },
+    { "ui-backend", required_argument, 0, 'u' },
     { "help", no_argument, 0, 'h' },
     { "verbose", no_argument, 0, 'v' },
     { "config", required_argument, 0, 'c' },
@@ -47,9 +49,11 @@ static void print_usage()
     printf("  -a, --address=ADDR    IP address of Hyperion server\n");
     printf("  -p, --port=PORT       Port of Hyperion flatbuffers server (default 19400)\n");
     printf("  -f, --fps=FPS         Framerate for sending video frames (default 0 = unlimited)\n");
-    printf("  -b, --backend=BE      Use specific backend (default auto)\n");
+    printf("  -b, --backend=BE      Use specific video capture backend (default auto)\n");
+    printf("  -u, --ui-backend=BE   Use specific ui capture backend (default auto)\n");
     printf("  -V, --no-video        Video will not be captured\n");
     printf("  -G, --no-gui          GUI/UI will not be captured\n");
+    printf("  -n, --no-vsync        Disable vsync (may increase framerate at the cost of tearing/artifacts)\n");
     printf("  -c, --config=PATH     Absolute path for configfile to load settings. Giving additional runtime arguments will overwrite loaded ones.\n");
     printf("  -s, --save-conf=PATH  Saving configfile to given path.\n");
 }
@@ -59,7 +63,7 @@ static int parse_options(int argc, char* argv[])
     int opt, longindex;
     int ret;
 
-    while ((opt = getopt_long(argc, argv, "x:y:a:p:f:b:c:s:vhSVG", long_options, &longindex)) != -1) {
+    while ((opt = getopt_long(argc, argv, "x:y:a:p:f:b:u:c:s:vnhSVG", long_options, &longindex)) != -1) {
         switch (opt) {
         case 'x':
             settings.width = atoi(optarg);
@@ -87,12 +91,19 @@ static int parse_options(int argc, char* argv[])
             // ???
             // settings.no_service = 1;
             break;
+        case 'n':
+            settings.vsync = false;
+            break;
         case 'v':
             log_set_level(Debug);
             break;
         case 'b':
             free(settings.video_backend);
             settings.video_backend = strdup(optarg);
+            break;
+        case 'u':
+            free(settings.ui_backend);
+            settings.ui_backend = strdup(optarg);
             break;
         case 'c':
             DBG("Loading config file %s...", optarg);
@@ -132,7 +143,7 @@ int main(int argc, char* argv[])
         INFO("Running via CLI");
     } else {
         INFO("Running as a service");
-        settings_load_file(&settings, "/media/developer/apps/usr/palm/services/org.webosbrew.piccap.service/config.json");
+        settings_load_file(&settings, SETTINGS_PERSISTENCE_PATH);
     }
 
     if ((ret = parse_options(argc, argv)) != 0) {
