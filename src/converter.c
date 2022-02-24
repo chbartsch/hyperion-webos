@@ -52,13 +52,14 @@ int converter_run(converter_t* this, frame_info_t* input, frame_info_t* output, 
                 output->width,
                 output->height);
         } else if (input->pixel_format == PIXFMT_YUV420_SEMI_PLANAR) {
-            NV21ToARGB(
+            NV21ToARGBMatrix(
                 input->planes[0].buffer,
                 input->planes[0].stride,
                 input->planes[1].buffer,
                 input->planes[1].stride,
                 output->planes[0].buffer,
                 output->planes[0].stride,
+                &kYvuH709Constants,
                 output->width,
                 output->height);
         } else if (input->pixel_format == PIXFMT_YUV422_SEMI_PLANAR) {
