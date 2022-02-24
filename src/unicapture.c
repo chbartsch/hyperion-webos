@@ -241,14 +241,14 @@ void* unicapture_run(void* data)
 
         uint64_t frame_processed = getticks_us();
 
-        if (got_frame && framecounter % 30 == 0) {
-            char filename[256];
-            snprintf(filename, sizeof(filename), "/tmp/hyperion-webos-dump.%03d.data", (int)(framecounter / 30) % 10);
-            FILE* fd = fopen(filename, "wb");
-            fwrite(final_frame, 3 * width * height, 1, fd);
-            fclose(fd);
-            INFO("Buffer dumped to: %s", filename);
-        }
+        // if (got_frame && framecounter % 30 == 0) {
+        //     char filename[256];
+        //     snprintf(filename, sizeof(filename), "/tmp/hyperion-webos-dump.%03d.data", (int)(framecounter / 30) % 10);
+        //     FILE* fd = fopen(filename, "wb");
+        //     fwrite(final_frame, 3 * width * height, 1, fd);
+        //     fclose(fd);
+        //     INFO("Buffer dumped to: %s", filename);
+        // }
 
         if (this->callback != NULL) {
             this->callback(this->callback_data, width, height, final_frame);
